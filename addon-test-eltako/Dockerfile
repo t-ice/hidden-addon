@@ -17,8 +17,8 @@ RUN apk add --no-cache python3 py3-pip git && \
     pip3 install git+https://github.com/mak-gitdev/enocean.git && \
     git clone -b master --single-branch --depth 1 https://github.com/embyt/enocean-mqtt.git && \
     cd enocean-mqtt && python3 setup.py develop && cd .. && \
-    echo "Installing support-eltako branch" && \
-    git clone -b support-eltako --single-branch --depth 1 https://github.com/mak-gitdev/HA_enoceanmqtt.git && \
+    echo "Installing fsb14-position-persist branch (fork with cover position persistence)" && \
+    git clone -b fsb14-position-persist --single-branch --depth 1 https://github.com/t-ice/HA_enoceanmqtt.git && \
     cp -rf HA_enoceanmqtt/enoceanmqtt enocean-mqtt && \
     rm -rf HA_enoceanmqtt
 
