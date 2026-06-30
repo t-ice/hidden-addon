@@ -130,14 +130,6 @@ if ! bashio::config.is_empty 'eep_file'; then
    fi
 fi
 
-# Dev override: if daemon code is provided under /config/HA_enoceanmqtt, use it instead
-# of the image's bundled code. This lets us iterate on the Python code via Samba (/config)
-# plus an add-on restart, without rebuilding the image.
-if [ -d /config/HA_enoceanmqtt/enoceanmqtt ]; then
-  bashio::log.yellow "Using daemon code override from /config/HA_enoceanmqtt"
-  cp -rf /config/HA_enoceanmqtt/enoceanmqtt/. /app/enocean-mqtt/enoceanmqtt/
-fi
-
 bashio::log.green "Starting EnOceanMQTT..."
 . /app/venv/bin/activate
 enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE
