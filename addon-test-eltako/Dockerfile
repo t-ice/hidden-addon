@@ -17,8 +17,13 @@ RUN apk add --no-cache python3 py3-pip git && \
     pip3 install 'beautifulsoup4<4.13' && \
     pip3 install git+https://github.com/mak-gitdev/enocean.git && \
     git clone -b master --single-branch --depth 1 https://github.com/embyt/enocean-mqtt.git && \
-    cd enocean-mqtt && python3 -m pip install -e . && cd .. && \
-    echo "Installing fsb14-position-persist branch (fork with cover position persistence)" && \
+    cd enocean-mqtt && python3 -m pip install -e . && cd ..
+
+# Pull the daemon code from the fork. The ADD line is a cache-buster: when the branch
+# HEAD changes, this layer (and the clone below) is invalidated and re-run. Without it
+# Docker reuses a cached clone and silently ships an outdated commit.
+ADD https://api.github.com/repos/t-ice/HA_enoceanmqtt/git/refs/heads/fsb14-position-persist /tmp/ha_enoceanmqtt_ref.json
+RUN echo "Installing fsb14-position-persist branch (fork with cover position persistence)" && \
     git clone -b fsb14-position-persist --single-branch --depth 1 https://github.com/t-ice/HA_enoceanmqtt.git && \
     cp -rf HA_enoceanmqtt/enoceanmqtt enocean-mqtt && \
     rm -rf HA_enoceanmqtt
