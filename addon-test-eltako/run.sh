@@ -142,7 +142,9 @@ if [ -n "$HOSTPORT" ]; then
   # neu aufgebaut -> nie ein toter Filedeskriptor.
   bashio::log.green "TCP mode: bridging $HOSTPORT via socat -> $PTY"
   while true; do
-    socat -d -T30 pty,link=$PTY,raw,echo=0 \
+    # KEIN -T (Inaktivitäts-Timeout): EnOcean-Funkstille >30s ist normal und darf die
+    # Verbindung NICHT beenden. Tote Peers erkennt TCP-keepalive (~25s) von selbst.
+    socat -d pty,link=$PTY,raw,echo=0 \
       tcp:$HOSTPORT,keepalive,keepidle=10,keepintvl=5,keepcnt=3,connect-timeout=10 &
     SOCAT=$!
     for i in $(seq 1 20); do [ -e "$PTY" ] && break; sleep 0.5; done

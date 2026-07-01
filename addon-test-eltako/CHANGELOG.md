@@ -1,3 +1,9 @@
+## 0.0.13
+
+- Fix: remove socat `-T30` inactivity timeout. EnOcean radio silence >30s is normal
+  and was tearing down the bridge every quiet period (Serial port exception ->
+  reconnect loop). Dead peers are still detected via TCP keepalive (~25s).
+
 ## 0.0.12
 
 - Add optional `enocean_tcp` (host:port) mode: bridge a remote EnOcean serial

@@ -1,7 +1,7 @@
 name: "EnOcean MQTT Eltako (FSB14-Fix)"
 description: "EnOcean to MQTT bridge for Home Assistant (fork with FSB14 cover position persistence)"
 url: "https://github.com/t-ice/hidden-addon"
-version: "0.0.12"
+version: "0.0.13"
 slug: "enoceanmqtt_eltako_fix"
 stage: "experimental"
 init: false
