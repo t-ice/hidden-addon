@@ -1,10 +1,11 @@
 name: "EnOcean MQTT Eltako (FSB14-Fix)"
 description: "EnOcean to MQTT bridge for Home Assistant (fork with FSB14 cover position persistence)"
 url: "https://github.com/t-ice/hidden-addon"
-version: "0.0.11"
+version: "0.0.12"
 slug: "enoceanmqtt_eltako_fix"
 stage: "experimental"
 init: false
+boot: auto
 uart: true
 hassio_api: true
 homeassistant_api: true
@@ -25,6 +26,7 @@ options:
   eep_file: ""
   log_file: "/config/enoceanmqtt.log"
   enocean_port: ""
+  enocean_tcp: ""
   debug: false
   log_packets: false
   use_dev_name_in_entity: false
@@ -38,7 +40,8 @@ schema:
   mapping_file: "str?"
   eep_file: "str?"
   log_file: "str?"
-  enocean_port: "device(subsystem=tty)"
+  enocean_port: "str?"
+  enocean_tcp: "str?"
   debug: "bool?"
   log_packets: "bool?"
   use_dev_name_in_entity: "bool?"

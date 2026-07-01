@@ -1,3 +1,11 @@
+## 0.0.12
+
+- Add optional `enocean_tcp` (host:port) mode: bridge a remote EnOcean serial
+  gateway (e.g. ser2net) via socat into a local PTY, with keepalive-based
+  reconnect and PTY/daemon pair-supervision. Replaces fragile USBIP passthrough.
+- Falls back to the unchanged serial `enocean_port` path when `enocean_tcp` is empty.
+- `boot: auto`; loosen `enocean_port` schema to `str?`.
+
 ## 0.0.11
 
 - Merge develop + Add FJ62, TF61L, TF61J, FDG14

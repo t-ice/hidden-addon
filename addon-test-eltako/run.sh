@@ -132,4 +132,32 @@ fi
 
 bashio::log.green "Starting EnOceanMQTT..."
 . /app/venv/bin/activate
-enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE
+
+PTY=/tmp/enocean-pty
+HOSTPORT="$(bashio::config 'enocean_tcp')"
+
+if [ -n "$HOSTPORT" ]; then
+  # TCP-Modus: ser2net am Pi über socat als lokales PTY einbinden.
+  # socat-PTY und enoceanmqtt laufen als Paar; stirbt eines, werden beide
+  # neu aufgebaut -> nie ein toter Filedeskriptor.
+  bashio::log.green "TCP mode: bridging $HOSTPORT via socat -> $PTY"
+  while true; do
+    socat -d -T30 pty,link=$PTY,raw,echo=0 \
+      tcp:$HOSTPORT,keepalive,keepidle=10,keepintvl=5,keepcnt=3,connect-timeout=10 &
+    SOCAT=$!
+    for i in $(seq 1 20); do [ -e "$PTY" ] && break; sleep 0.5; done
+    if [ ! -e "$PTY" ]; then
+      bashio::log.yellow "Pi nicht erreichbar ($HOSTPORT) - retry in 5s"
+      kill $SOCAT 2>/dev/null; wait 2>/dev/null; sleep 5; continue
+    fi
+    sed -i "s#^enocean_port .*#enocean_port          = $PTY#" "$CONFIG_FILE"
+    enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE &
+    DAEMON=$!
+    wait -n $SOCAT $DAEMON
+    kill $SOCAT $DAEMON 2>/dev/null; wait 2>/dev/null
+    bashio::log.yellow "Link/Daemon abgebrochen - Neuaufbau in 3s"; sleep 3
+  done
+else
+  # Serieller Modus (usbip): unverändertes bisheriges Verhalten.
+  enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE
+fi
