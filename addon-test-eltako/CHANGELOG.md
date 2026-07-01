@@ -1,3 +1,12 @@
+## 0.0.15
+
+- Fix: container crashed/flapped when a live link died on a half-open socket
+  (real Pi power loss): socat read-timeout -> `run.sh` exited -> s6 tore down the
+  container -> Supervisor restart-loop hit the start limit -> addon stayed stopped.
+  Now: `wait -n` replaced by a robust poll loop, `trap '' PIPE HUP` so spurious
+  signals never end run.sh, and an outer guard loop so run.sh can never exit on
+  its own. The addon now rides out a real power outage and reconnects by itself.
+
 ## 0.0.14
 
 - Fix: bridge did not recover from a prolonged peer outage (Pi power loss) - the

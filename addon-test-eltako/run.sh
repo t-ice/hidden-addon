@@ -142,8 +142,11 @@ if [ -n "$HOSTPORT" ]; then
   # sauber beendet und neu aufgebaut -> nie ein toter Filedeskriptor.
   bashio::log.green "TCP mode: bridging $HOSTPORT via socat -> $PTY"
 
-  # Robuste Beendigung: SIGTERM, dann SIGKILL-Fallback, KEIN blockierendes 'wait'
-  # (der Daemon stirbt nicht immer auf SIGTERM -> sonst friert die Schleife ein).
+  # Spurious-Signale dürfen run.sh NIE beenden (sonst stoppt s6 den Container ->
+  # Flapping/Start-Limit). SIGTERM lassen wir zu, damit HA das Addon stoppen kann.
+  trap '' PIPE HUP
+
+  # Robuste Beendigung: SIGTERM, dann SIGKILL-Fallback.
   kill_pair() {
     kill "$@" 2>/dev/null
     for _ in 1 2 3 4 5 6; do
@@ -155,36 +158,49 @@ if [ -n "$HOSTPORT" ]; then
     kill -9 "$@" 2>/dev/null
   }
 
+  bridge_loop() {
+    while true; do
+      # 1) Erreichbarkeit prüfen (Pi kann aus sein / rebooten). So wird der Daemon
+      #    NICHT gegen eine tote Verbindung gestartet; wir verbinden von selbst,
+      #    sobald der Pi zurück ist.
+      if ! timeout 6 socat -u OPEN:/dev/null "tcp:$HOSTPORT,connect-timeout=4" 2>/dev/null; then
+        bashio::log.yellow "ser2net $HOSTPORT nicht erreichbar - retry in 5s"
+        sleep 5; continue
+      fi
+
+      # 2) socat-Brücke. KEIN -T (Funkstille >30s ist normal); tote Peers erkennt
+      #    TCP-keepalive bzw. der Read-Timeout von socat.
+      rm -f "$PTY"
+      socat -d pty,link=$PTY,raw,echo=0 \
+        "tcp:$HOSTPORT,keepalive,keepidle=10,keepintvl=5,keepcnt=3,connect-timeout=8" &
+      SOCAT=$!
+      for i in $(seq 1 20); do [ -e "$PTY" ] && break; sleep 0.5; done
+      if [ ! -e "$PTY" ] || ! kill -0 "$SOCAT" 2>/dev/null; then
+        bashio::log.yellow "socat/PTY nicht bereit - Neuaufbau in 5s"
+        kill_pair "$SOCAT"; sleep 5; continue
+      fi
+
+      # 3) Daemon starten (liest das lokale PTY).
+      sed -i "s#^enocean_port .*#enocean_port          = $PTY#" "$CONFIG_FILE"
+      enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE &
+      DAEMON=$!
+
+      # 4) Beide POLLEN (kein 'wait -n' -> keine Quirks/Blockaden). Sobald eines
+      #    stirbt, beide hart beenden und neu aufbauen.
+      while kill -0 "$SOCAT" 2>/dev/null && kill -0 "$DAEMON" 2>/dev/null; do
+        sleep 2
+      done
+      kill_pair "$SOCAT" "$DAEMON"
+      bashio::log.yellow "Link/Daemon abgebrochen - Neuaufbau in 3s"; sleep 3
+    done
+  }
+
+  # Äußeres Netz: sollte bridge_loop je zurückkehren (dürfte nie passieren),
+  # sofort neu starten. run.sh endet damit NIE von selbst -> Container bleibt oben.
   while true; do
-    # 1) Erst prüfen, ob ser2net überhaupt erreichbar ist (Pi kann aus sein / rebooten).
-    #    So wird der Daemon NICHT gegen eine tote Verbindung gestartet; wir warten
-    #    einfach und verbinden von selbst, sobald der Pi zurück ist.
-    if ! timeout 6 socat -u OPEN:/dev/null "tcp:$HOSTPORT,connect-timeout=4" 2>/dev/null; then
-      bashio::log.yellow "ser2net $HOSTPORT nicht erreichbar - retry in 5s"
-      sleep 5; continue
-    fi
-
-    # 2) socat-Brücke aufbauen. KEIN -T (Funkstille >30s ist normal); tote Peers
-    #    erkennt TCP-keepalive (~25s).
-    rm -f "$PTY"
-    socat -d pty,link=$PTY,raw,echo=0 \
-      "tcp:$HOSTPORT,keepalive,keepidle=10,keepintvl=5,keepcnt=3,connect-timeout=8" &
-    SOCAT=$!
-    for i in $(seq 1 20); do [ -e "$PTY" ] && break; sleep 0.5; done
-    if [ ! -e "$PTY" ] || ! kill -0 "$SOCAT" 2>/dev/null; then
-      bashio::log.yellow "socat/PTY nicht bereit - Neuaufbau in 5s"
-      kill_pair "$SOCAT"; sleep 5; continue
-    fi
-
-    # 3) Daemon starten (liest das lokale PTY).
-    sed -i "s#^enocean_port .*#enocean_port          = $PTY#" "$CONFIG_FILE"
-    enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE &
-    DAEMON=$!
-
-    # 4) Auf das Ende EINES der beiden warten, dann BEIDE hart beenden und neu.
-    wait -n "$SOCAT" "$DAEMON" 2>/dev/null
-    kill_pair "$SOCAT" "$DAEMON"
-    bashio::log.yellow "Link/Daemon abgebrochen - Neuaufbau in 3s"; sleep 3
+    bridge_loop
+    bashio::log.red "bridge_loop unerwartet beendet - Neustart in 3s"
+    sleep 3
   done
 else
   # Serieller Modus (usbip): unverändertes bisheriges Verhalten.
