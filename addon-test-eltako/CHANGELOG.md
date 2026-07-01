@@ -1,3 +1,11 @@
+## 0.0.14
+
+- Fix: bridge did not recover from a prolonged peer outage (Pi power loss) - the
+  addon ended up completely stopped. Now: reachability-probe before starting the
+  daemon (no daemon against a dead link), hard SIGTERM->SIGKILL cleanup instead of
+  a blocking `wait` (daemon does not always die on SIGTERM -> loop froze), and the
+  supervision loop can never exit. Recovers automatically once the Pi is back.
+
 ## 0.0.13
 
 - Fix: remove socat `-T30` inactivity timeout. EnOcean radio silence >30s is normal

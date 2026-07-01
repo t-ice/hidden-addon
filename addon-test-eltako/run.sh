@@ -139,24 +139,51 @@ HOSTPORT="$(bashio::config 'enocean_tcp')"
 if [ -n "$HOSTPORT" ]; then
   # TCP-Modus: ser2net am Pi über socat als lokales PTY einbinden.
   # socat-PTY und enoceanmqtt laufen als Paar; stirbt eines, werden beide
-  # neu aufgebaut -> nie ein toter Filedeskriptor.
+  # sauber beendet und neu aufgebaut -> nie ein toter Filedeskriptor.
   bashio::log.green "TCP mode: bridging $HOSTPORT via socat -> $PTY"
+
+  # Robuste Beendigung: SIGTERM, dann SIGKILL-Fallback, KEIN blockierendes 'wait'
+  # (der Daemon stirbt nicht immer auf SIGTERM -> sonst friert die Schleife ein).
+  kill_pair() {
+    kill "$@" 2>/dev/null
+    for _ in 1 2 3 4 5 6; do
+      alive=0
+      for p in "$@"; do kill -0 "$p" 2>/dev/null && alive=1; done
+      [ "$alive" = 0 ] && return 0
+      sleep 0.5
+    done
+    kill -9 "$@" 2>/dev/null
+  }
+
   while true; do
-    # KEIN -T (Inaktivitäts-Timeout): EnOcean-Funkstille >30s ist normal und darf die
-    # Verbindung NICHT beenden. Tote Peers erkennt TCP-keepalive (~25s) von selbst.
+    # 1) Erst prüfen, ob ser2net überhaupt erreichbar ist (Pi kann aus sein / rebooten).
+    #    So wird der Daemon NICHT gegen eine tote Verbindung gestartet; wir warten
+    #    einfach und verbinden von selbst, sobald der Pi zurück ist.
+    if ! timeout 6 socat -u OPEN:/dev/null "tcp:$HOSTPORT,connect-timeout=4" 2>/dev/null; then
+      bashio::log.yellow "ser2net $HOSTPORT nicht erreichbar - retry in 5s"
+      sleep 5; continue
+    fi
+
+    # 2) socat-Brücke aufbauen. KEIN -T (Funkstille >30s ist normal); tote Peers
+    #    erkennt TCP-keepalive (~25s).
+    rm -f "$PTY"
     socat -d pty,link=$PTY,raw,echo=0 \
-      tcp:$HOSTPORT,keepalive,keepidle=10,keepintvl=5,keepcnt=3,connect-timeout=10 &
+      "tcp:$HOSTPORT,keepalive,keepidle=10,keepintvl=5,keepcnt=3,connect-timeout=8" &
     SOCAT=$!
     for i in $(seq 1 20); do [ -e "$PTY" ] && break; sleep 0.5; done
-    if [ ! -e "$PTY" ]; then
-      bashio::log.yellow "Pi nicht erreichbar ($HOSTPORT) - retry in 5s"
-      kill $SOCAT 2>/dev/null; wait 2>/dev/null; sleep 5; continue
+    if [ ! -e "$PTY" ] || ! kill -0 "$SOCAT" 2>/dev/null; then
+      bashio::log.yellow "socat/PTY nicht bereit - Neuaufbau in 5s"
+      kill_pair "$SOCAT"; sleep 5; continue
     fi
+
+    # 3) Daemon starten (liest das lokale PTY).
     sed -i "s#^enocean_port .*#enocean_port          = $PTY#" "$CONFIG_FILE"
     enoceanmqtt $DEBUG_FLAG --logfile $LOG_FILE $CONFIG_FILE &
     DAEMON=$!
-    wait -n $SOCAT $DAEMON
-    kill $SOCAT $DAEMON 2>/dev/null; wait 2>/dev/null
+
+    # 4) Auf das Ende EINES der beiden warten, dann BEIDE hart beenden und neu.
+    wait -n "$SOCAT" "$DAEMON" 2>/dev/null
+    kill_pair "$SOCAT" "$DAEMON"
     bashio::log.yellow "Link/Daemon abgebrochen - Neuaufbau in 3s"; sleep 3
   done
 else
